@@ -1,0 +1,17 @@
+{
+  "hosting": {
+    "public": "out",
+    "cleanUrls": true,
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "predeploy": [
+      "npm run build"
+    ]
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}

@@ -1,12 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { db } from "@/lib/firebase";
+import {
+  collection,
+  getDocs,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  serverTimestamp,
+} from "firebase/firestore";
 
 type Todo = {
-  id: number;
+  id: string;
   task: string;
   is_done: boolean;
+  createdAt?: number;
 };
 
 export default function TodosPage() {
@@ -15,17 +25,24 @@ export default function TodosPage() {
   const [loading, setLoading] = useState(true);
 
   async function loadTodos() {
-    const { data, error } = await supabase
-      .from("todos")
-      .select("id, task, is_done")
-      .order("id", { ascending: true });
-
-    if (error) {
-      console.error(error);
-    } else {
-      setTodos(data ?? []);
+    try {
+      const snapshot = await getDocs(collection(db, "todos"));
+      const items: Todo[] = snapshot.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          task: data.task ?? "",
+          is_done: data.is_done ?? false,
+          createdAt: data.createdAt?.toMillis?.() ?? 0,
+        };
+      });
+      items.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      setTodos(items);
+    } catch (error) {
+      console.error("Error loading todos from Firestore:", error);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   useEffect(() => {
@@ -34,42 +51,52 @@ export default function TodosPage() {
 
   async function addTodo() {
     if (!newTask.trim()) return;
-    const { error } = await supabase.from("todos").insert({ task: newTask });
-    if (error) {
-      console.error(error);
-      return;
+    try {
+      await addDoc(collection(db, "todos"), {
+        task: newTask.trim(),
+        is_done: false,
+        createdAt: serverTimestamp(),
+      });
+      setNewTask("");
+      await loadTodos();
+    } catch (error) {
+      console.error("Error adding todo:", error);
     }
-    setNewTask("");
-    loadTodos();
   }
 
   async function toggleDone(todo: Todo) {
-    const { error } = await supabase
-      .from("todos")
-      .update({ is_done: !todo.is_done })
-      .eq("id", todo.id);
-    if (error) {
-      console.error(error);
-      return;
+    try {
+      await updateDoc(doc(db, "todos", todo.id), {
+        is_done: !todo.is_done,
+      });
+      await loadTodos();
+    } catch (error) {
+      console.error("Error updating todo:", error);
     }
-    loadTodos();
   }
 
-  async function deleteTodo(id: number) {
-    const { error } = await supabase.from("todos").delete().eq("id", id);
-    if (error) {
-      console.error(error);
-      return;
+  async function deleteTodo(id: string) {
+    try {
+      await deleteDoc(doc(db, "todos", id));
+      await loadTodos();
+    } catch (error) {
+      console.error("Error deleting todo:", error);
     }
-    loadTodos();
   }
+
+  const completedCount = todos.filter((todo) => todo.is_done).length;
 
   return (
     <div className="flex flex-col flex-1 items-center bg-zinc-50 font-sans dark:bg-black">
       <main className="flex flex-1 w-full max-w-md flex-col gap-6 py-16 px-6">
-        <h1 className="text-2xl font-semibold text-black dark:text-zinc-50">
-          My Todos
-        </h1>
+        <div className="flex items-baseline justify-between">
+          <h1 className="text-2xl font-semibold text-black dark:text-zinc-50">
+            My Todos
+          </h1>
+          <span className="text-sm text-zinc-600 dark:text-zinc-400">
+            完了: <span className="font-medium text-black dark:text-white">{completedCount}</span> / {todos.length} 件
+          </span>
+        </div>
 
         <div className="flex gap-2">
           <input
@@ -80,7 +107,7 @@ export default function TodosPage() {
             onKeyDown={(e) => e.key === "Enter" && addTodo()}
           />
           <button
-            className="rounded bg-black px-4 py-2 text-white dark:bg-white dark:text-black"
+            className="rounded bg-black px-4 py-2 text-white dark:bg-white dark:text-black hover:opacity-90 transition-opacity"
             onClick={addTodo}
           >
             Add
@@ -111,7 +138,7 @@ export default function TodosPage() {
                   {todo.task}
                 </span>
                 <button
-                  className="text-sm text-red-500"
+                  className="text-sm text-red-500 hover:text-red-700 transition-colors"
                   onClick={() => deleteTodo(todo.id)}
                 >
                   Delete
